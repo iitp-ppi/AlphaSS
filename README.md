@@ -41,21 +41,7 @@ MSAs can be subsampled to a given Neff with --neff.
 AlphaSS expects a FASTA file containing a single sequence, the disulfide bond pair informations features (pickle) with --disulf_info_path, and precomputed features (pickle) with --features. 
 
 ```
-python3 predict_with_SS.py 8C3Y_A.fasta 
-```
-
-If there are not precoumpred alignments, 
-
- and databases for template/ MSA search, [see also OpenFold Inference](https://github.com/aqlaboratory/openfold#inference).
-
-```
-python predict_with_SS.py 7K3N_A.fasta photoL.csv --checkpoint_path resources/AlphaLink_params/finetuning_model_5_ptm_CACA_10A.pt --uniref90_database_path uniref90.fasta --mgnify_database_path mgy_clusters.fa --pdb70_database_path pdb70/pdb70 --uniclust30_database_path uniclust30_2018_08/uniclust30_2018_08 --jackhmmer_binary_path $CONDA_PREFIX/bin/jackhmmer --hhblits_binary_path $CONDA_PREFIX/bin/hhblits --hhsearch_binary_path $CONDA_PREFIX/bin/hhsearch --kalign_binary_path $CONDA_PREFIX/bin/kalign
-```
-
-MSA generation can be skipped if there are precomputed alignments:
-
-```
-python predict_with_SS.py 8C3Y_A.fasta photoL.csv --use_precomputed_alignments msa/ --checkpoint_path resources/AlphaLink_params/finetuning_model_5_ptm_CACA_10A.pt  --uniref90_database_path uniref90.fasta --mgnify_database_path mgy_clusters.fa --pdb70_database_path pdb70/pdb70 --uniclust30_database_path uniclust30_2018_08/uniclust30_2018_08 
+It will be updated soon.
 ```
 
 
