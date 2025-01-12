@@ -244,19 +244,20 @@ def count_models_to_evaluate(openfold_checkpoint_path, jax_param_path):
     return model_count
 
 
-def load_models_from_command_line(args, config):
+def load_models_from_command_line(args, config, model_number):
     # Create the output directory
 
     model = AlphaFold(config)
     model = model.eval()
     
-    #for..... vanila_openfold...config..... 
+    # for vanila OpenFold config. 
     if args.model_name.startswith('model') :
-        import_jax_weights_(model, "./openfold/params/params_model_5_ptm.npz", version="model_5_ptm")
+        import_jax_weights_(model, "./openfold/resources/params/params_model_5_ptm.npz", version="model_5_ptm")
     
-    #not vanila openfold...
+    # for AlphaSS config 
     else : 
-        sd = torch.load(args.checkpoint_path)['ema']['params']
+        ckpt_path = os.path.join(args.checkpoint_path, f'{args.model_name}_{model_number}.ckpt')
+        sd = torch.load(ckpt_path)['ema']['params']
 
         model.load_state_dict(sd)
     
@@ -309,97 +310,104 @@ def main(args):
     tag = tag[0]
     seq = seq[0]
 
-    model, output_directory = load_models_from_command_line(args, config)
+    for model_number in range(args.model_num):
+        model, output_directory = load_models_from_command_line(args, config, model_number)
 
-    cur_tracing_interval = 0
+        cur_tracing_interval = 0
 
-    output_name = f'{tag}'
-    if args.output_postfix is not None:
-        output_name = f'{output_name}_{args.output_postfix}'
+        output_name = f'{tag}'
+        if args.output_postfix is not None:
+            output_name = f'{output_name}_{args.output_postfix}'
 
-    if args.features:
-        feature_dict = pickle.load(open(args.features,'rb'))
-    else:
-        # Does nothing if the alignments have already been computed
-        precompute_alignments(tag, seq, alignment_dir, args)
-        feature_dict = generate_feature_dict(
-            [tag],
-            [seq],
-            alignment_dir,
-            data_processor,
-            args,
+        if args.features:
+            feature_dict = pickle.load(open(args.features,'rb'))
+        else:
+            # Does nothing if the alignments have already been computed
+            precompute_alignments(tag, seq, alignment_dir, args)
+            feature_dict = generate_feature_dict(
+                [tag],
+                [seq],
+                alignment_dir,
+                data_processor,
+                args,
+            )
+            
+    
+        # Taking disulfide bond information as unsupervised feature
+        disulf_info = np.load(args.disulf_info_path, allow_pickle=True)
+        feature_dict['disulf_disto'] = disulf_info['disulf_disto']
+        # subsample MSAs to specified Neff
+        msa = feature_dict['msa']
+        
+
+        if args.neff:
+            logger.info(
+                f"Subsampling MSA to Neff={args.neff}..."
+            )
+            indices = subsample_msa_sequentially(msa, neff=args.neff)
+            feature_dict['msa'] = msa[indices]
+            feature_dict['deletion_matrix_int'] = feature_dict['deletion_matrix_int'][indices]
+
+        processed_feature_dict = feature_processor.process_features(
+            feature_dict, mode='predict',
+        )
+
+        processed_feature_dict = {
+            k:torch.as_tensor(v, device=args.model_device) 
+            for k,v in processed_feature_dict.items()
+        }
+        
+
+        ## start inference...
+        out = run_model(model, processed_feature_dict, tag, args)
+
+        # Toss out the recycling dimensions --- we don't need them anymore
+        processed_feature_dict = tensor_tree_map(
+            lambda x: np.array(x[..., -1].cpu()), 
+            processed_feature_dict
         )
         
-   
-    # Taking disulfide bond information as unsupervised feature
-    disulf_info = np.load(args.disulf_info_path, allow_pickle=True)
-    feature_dict['disulf_disto'] = disulf_info['disulf_disto']
-    # subsample MSAs to specified Neff
-    msa = feature_dict['msa']
-    
+        
+        out = tensor_tree_map(lambda x: np.array(x.cpu()), out)
 
-    if args.neff:
-        logger.info(
-            f"Subsampling MSA to Neff={args.neff}..."
+        plddt = out["plddt"]
+
+        plddt_b_factors = np.repeat(
+            plddt[..., None], residue_constants.atom_type_num, axis=-1
         )
-        indices = subsample_msa_sequentially(msa, neff=args.neff)
-        feature_dict['msa'] = msa[indices]
-        feature_dict['deletion_matrix_int'] = feature_dict['deletion_matrix_int'][indices]
-
-    processed_feature_dict = feature_processor.process_features(
-        feature_dict, mode='predict',
-    )
-
-    processed_feature_dict = {
-        k:torch.as_tensor(v, device=args.model_device) 
-        for k,v in processed_feature_dict.items()
-    }
-    
-
-    ## start inference...
-    out = run_model(model, processed_feature_dict, tag, args)
-
-    # Toss out the recycling dimensions --- we don't need them anymore
-    processed_feature_dict = tensor_tree_map(
-        lambda x: np.array(x[..., -1].cpu()), 
-        processed_feature_dict
-    )
-    
-    
-    out = tensor_tree_map(lambda x: np.array(x.cpu()), out)
-
-    plddt = out["plddt"]
-
-    plddt_b_factors = np.repeat(
-        plddt[..., None], residue_constants.atom_type_num, axis=-1
-    )
-    
-    unrelaxed_protein = protein.from_prediction(
-        features=processed_feature_dict,
-        result=out,
-        b_factors=plddt_b_factors
-    )
-
-    unrelaxed_output_path = os.path.join(
-        output_directory, f'{output_name}_{args.model_num}_unrelaxed.pdb'
-    )
-
-
-    with open(unrelaxed_output_path, 'w') as fp:
-        fp.write(protein.to_pdb(unrelaxed_protein))
-
-    logger.info(f"Output written to {unrelaxed_output_path}...")
-    
-
-    
-    if args.save_outputs:
-        output_dict_path = os.path.join(
-            output_directory, f'{output_name}_{args.model_num}_output_dict.pkl'
+        
+        unrelaxed_protein = protein.from_prediction(
+            features=processed_feature_dict,
+            result=out,
+            b_factors=plddt_b_factors
         )
-        with open(output_dict_path, "wb") as fp:
-            pickle.dump(out, fp, protocol=pickle.HIGHEST_PROTOCOL)
 
-        logger.info(f"Model output written to {output_dict_path}...")
+        unrelaxed_output_path = os.path.join(
+            output_directory, f'{output_name}_{model_number}_unrelaxed.pdb'
+        )
+
+
+        with open(unrelaxed_output_path, 'w') as fp:
+            fp.write(protein.to_pdb(unrelaxed_protein))
+
+        logger.info(f"Output written to {unrelaxed_output_path}...")
+        
+
+        
+        if args.save_outputs:
+            output_dict_path = os.path.join(
+                output_directory, f'{output_name}_{model_number}_output_dict.pkl'
+            )
+            with open(output_dict_path, "wb") as fp:
+                pickle.dump(out, fp, protocol=pickle.HIGHEST_PROTOCOL)
+
+            logger.info(f"Model output written to {output_dict_path}...")
+            
+        if args.checking_vanila == True :
+            break
+        
+    
+    logger.info(f"Inference completed.")
 
 
 if __name__ == "__main__":
@@ -413,11 +421,6 @@ if __name__ == "__main__":
         "--model_name", type=str, default=None,
         help="""model_name for configuration setting..."""
     )
-    
-    parser.add_argument(
-        "--output_name", type=str, default=None,
-        help="""output_name for configuration setting..."""
-    )
 
     parser.add_argument(
         "--disulf_info_path", type=str, default=None,
@@ -425,8 +428,39 @@ if __name__ == "__main__":
     )
     
     parser.add_argument(
-        "--model_num", type=str, default=None,
-        help="""ckpt model num."""
+        "--features", type=str,
+        help="Feature pickle path"
+    )
+    
+    parser.add_argument(
+        "--checkpoint_path", type=str, default='./openfold/resources/AlphaSS_params/',
+        help="""Path to AlphaSS checkpoint (.ckpt file) or OpenFold checkpoint (.pt file)"""
+    )
+        
+    parser.add_argument(
+        "--output_dir", type=str, default=os.getcwd(),
+        help="""Name of the directory in which to output the prediction"""
+    )
+    
+    parser.add_argument(
+        "--output_name", type=str, default=None,
+        help="""output_name for configuration setting..."""
+    )
+    
+    parser.add_argument(
+        "--model_device", type=str, default="cuda:2",
+        help="""Name of the device on which to run the model. Any valid torch
+             device name is accepted (e.g. "cpu", "cuda:0")"""
+    )
+    
+    parser.add_argument(
+        "--model_num", type=int, default=5,
+        help="""iteration number of the AlphaSS model"""
+    )
+    
+    parser.add_argument(
+        "--checking_vanila", action="store_true", default=False,
+        help="""checking the usage model. If you want to use the openfold model weights, than set it True."""
     )
     
     parser.add_argument(
@@ -434,59 +468,46 @@ if __name__ == "__main__":
         help="""Path to alignment directory. If provided, alignment computation 
                 is skipped and database path arguments are ignored."""
     )
-        
-    parser.add_argument(
-        "--output_dir", type=str, default=os.getcwd(),
-        help="""Name of the directory in which to output the prediction""",
-    )
-    parser.add_argument(
-        "--model_device", type=str, default="cuda:2",
-        help="""Name of the device on which to run the model. Any valid torch
-             device name is accepted (e.g. "cpu", "cuda:0")"""
-    )
-    parser.add_argument(
-        "--checkpoint_path", type=str, default='/home/bis/230925_PSH_DisulF/AlphaLink/openfold/params/params_model_5_ptm.npz',
-        help="""Path to OpenFold checkpoint (.pt file)"""
-    )
+    
     parser.add_argument(
         "--save_outputs", action="store_true", default=True,
         help="Whether to save all model outputs, including embeddings, etc."
     )
-    parser.add_argument(
-        "--features", type=str,
-        help="Feature pickle"
-    )
-    parser.add_argument(
-        "--distograms", action="store_true", default=False,
-        help="Switch to distogram mode"
-    )
+    
     parser.add_argument(
         "--cpus", type=int, default=4,
         help="""Number of CPUs with which to run alignment tools"""
     )
+    
     parser.add_argument(
         "--preset", type=str, default='full_dbs',
         choices=('reduced_dbs', 'full_dbs')
     )
+    
     parser.add_argument(
         "--output_postfix", type=str, default=None,
         help="""Postfix for output prediction filenames"""
     )
+    
     parser.add_argument(
         "--data_random_seed", type=int, default=4242022
     )
+    
     parser.add_argument(
         "--skip_relaxation", action="store_true", default=False,
     )
+    
     parser.add_argument(
         "--neff", type=float,
         help="""MSAs are subsampled to specified Neff"""
     )
+    
     parser.add_argument(
         "--subtract_plddt", action="store_true", default=False,
         help=""""Whether to output (100 - pLDDT) in the B-factor column instead
                  of the pLDDT itself"""
     )
+    
     add_data_args(parser)
     args = parser.parse_args()
 
