@@ -9,11 +9,11 @@ dependencies:
   - conda-forge::pip==23.3.1
   - conda-forge::openmm=7.5.1
   - conda-forge::pdbfixer
-  - conda-forge::cudatoolkit==11.3.*
+  - conda-forge::cudatoolkit==11.8.*
   - bioconda::hmmer==3.3.2
   - bioconda::hhsuite==3.3.0
   - bioconda::kalign2==2.04
-  - pytorch::pytorch=1.12.*
+  - pytorch::pytorch=2.0.*
   - pip:
       - biopython==1.79
       - deepspeed==0.5.10
