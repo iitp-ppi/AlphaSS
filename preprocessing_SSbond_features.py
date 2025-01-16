@@ -50,7 +50,7 @@ restraints = np.genfromtxt(args.infile,
 if len(restraints.shape) == 1:
     restraints = np.array([restraints])
 
-seq_length = restraints["Length"][0]
+seq_length = restraints["Length"][0][0]
 distogram = np.zeros((seq_length, seq_length, 128))
 pair_info = []
 
@@ -73,4 +73,4 @@ pair_info = np.array(pair_info)
 disulf_info['disulf_disto'], disulf_info['pair_info'] = distogram, pair_info
 
 with open(args.outfile,'wb') as f:
-    pickle.dump(disulf_info)
+    pickle.dump(disulf_info,f)
