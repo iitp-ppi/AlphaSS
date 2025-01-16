@@ -19,8 +19,9 @@ dependencies:
       - deepspeed==0.5.10
       - dm-tree==0.1.6
       - ml-collections==0.1.0
-      - numpy==1.21.2
+      - numpy==1.21.5
       - pandas
+      - matplotlib
       - PyYAML==5.4.1
       - requests==2.26.0
       - scipy==1.7.1
