@@ -4,13 +4,6 @@ source scripts/vars.sh
 conda env create --name=${ENV_NAME} -f environment.yml
 source activate ${ENV_NAME}
 
-echo "Attempting to install FlashAttention"
-git clone https://github.com/HazyResearch/flash-attention
-CUR_DIR=$PWD
-cd flash-attention
-git checkout 5b838a8bef
-python3 setup.py install
-cd $CUR_DIR
 
 # Install DeepMind's OpenMM patch
 OPENFOLD_DIR=$PWD
@@ -36,6 +29,3 @@ bash scripts/download_alphafold_params.sh openfold/resources
 # Decompress test data
 gunzip tests/test_data/sample_feats.pickle.gz
 
-
-cd $CUR_DIR
-CC=g++ python setup.py install
