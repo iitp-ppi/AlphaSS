@@ -20,7 +20,7 @@ residueFrom and residueTo are the residues which bonded with the disulfide to ea
 
 Distance distributions for AlphaSS can be automatically generated from restraint lists with the script preprocessing_SSbond_features.py.
 ```
-     python preprocessing_SSbond_features.py --infile restraints.csv
+     python preprocessing_SSbond_features.py --infile restraints.csv --outfile SS_feature_path (.pkl)
 ```
 
 Where restraints.csv is a comma-separated file containing residueFrom,residueTo,sequenceLength. For example:
