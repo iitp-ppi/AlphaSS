@@ -66,10 +66,10 @@ def subsample_msa_sequentially(msa, neff=10, eff_cutoff=0.8, cap_msa=True):
 
 class OpenFoldSingleDataset(torch.utils.data.Dataset):
     def __init__(self,
-        data_dir: str,
-        alignment_dir: str, 
-        template_mmcif_dir: str,
-        max_template_date: str,
+        # data_dir: str,
+        # alignment_dir: str, 
+        # template_mmcif_dir: str,
+        # max_template_date: str,
         config: mlc.ConfigDict,
         kalign_binary_path: str = '/usr/bin/kalign',
         mapping_path: Optional[str] = None,
@@ -81,6 +81,7 @@ class OpenFoldSingleDataset(torch.utils.data.Dataset):
         mode: str = "train", 
         _output_raw: bool = False,
         feature_dir: Optional[str] = None,
+        # train_by_features: bool,
     ):
         """
             Args:
@@ -127,14 +128,15 @@ class OpenFoldSingleDataset(torch.utils.data.Dataset):
                     "train", "eval", or "predict"
         """
         super(OpenFoldSingleDataset, self).__init__()
-        self.data_dir = data_dir
-        self.alignment_dir = alignment_dir
+        # self.data_dir = data_dir
+        # self.alignment_dir = alignment_dir
 
         self.feature_dir = feature_dir
         self.config = config
         self.treat_pdb_as_distillation = treat_pdb_as_distillation
         self.mode = mode
         self._output_raw = _output_raw
+        # self.train_by_features = train_by_features
 
         valid_modes = ["train", "eval", "predict"]
         if(mode not in valid_modes):
@@ -191,26 +193,26 @@ class OpenFoldSingleDataset(torch.utils.data.Dataset):
                 self.reverse_mapping = { v:k for k,v in self.mapping.items() }
                 
                  
-        
-        if(template_release_dates_cache_path is None):
-            logging.warning(
-                "Template release dates cache does not exist. Remember to run "
-                "scripts/generate_mmcif_cache.py before running OpenFold"
-            )
+        # # if train_by_features == False:
+        # if(template_release_dates_cache_path is None):
+        #     logging.warning(
+        #         "Template release dates cache does not exist. Remember to run "
+        #         "scripts/generate_mmcif_cache.py before running OpenFold"
+        #     )
 
-        template_featurizer = templates.TemplateHitFeaturizer(
-            mmcif_dir=template_mmcif_dir,
-            max_template_date=max_template_date,
-            max_hits=max_template_hits,
-            kalign_binary_path=kalign_binary_path,
-            release_dates_path=template_release_dates_cache_path,
-            obsolete_pdbs_path=obsolete_pdbs_file_path,
-            _shuffle_top_k_prefiltered=shuffle_top_k_prefiltered,
-        )
+        # template_featurizer = templates.TemplateHitFeaturizer(
+        #     mmcif_dir=template_mmcif_dir,
+        #     max_template_date=max_template_date,
+        #     max_hits=max_template_hits,
+        #     kalign_binary_path=kalign_binary_path,
+        #     release_dates_path=template_release_dates_cache_path,
+        #     obsolete_pdbs_path=obsolete_pdbs_file_path,
+        #     _shuffle_top_k_prefiltered=shuffle_top_k_prefiltered,
+        # )
 
-        self.data_pipeline = data_pipeline.DataPipeline(
-            template_featurizer=template_featurizer,
-        )
+        # self.data_pipeline = data_pipeline.DataPipeline(
+        #     template_featurizer=template_featurizer,
+        # )
 
         if(not self._output_raw):
             self.feature_pipeline = feature_pipeline.FeaturePipeline(config) 
@@ -482,8 +484,8 @@ class OpenFoldDataLoader(torch.utils.data.DataLoader):
 class OpenFoldDataModule(pl.LightningDataModule):
     def __init__(self,
         config: mlc.ConfigDict,
-        template_mmcif_dir: str,
-        max_template_date: str,
+        template_mmcif_dir: Optional[str] = None,
+        max_template_date: Optional[str] = None,
         train_data_dir: Optional[str] = None,
         train_alignment_dir: Optional[str] = None,
         distillation_data_dir: Optional[str] = None,
@@ -497,7 +499,8 @@ class OpenFoldDataModule(pl.LightningDataModule):
         distillation_mapping_path: Optional[str] = None,
         obsolete_pdbs_file_path: Optional[str] = None,
         template_release_dates_cache_path: Optional[str] = None,
-                 
+        
+        train_by_features : bool=True,
         train_feature_dir : Optional[str] = None,
         val_feature_dir : Optional[str] = None,
         batch_seed: Optional[int] = None,
@@ -508,6 +511,7 @@ class OpenFoldDataModule(pl.LightningDataModule):
         self.config = config
         self.template_mmcif_dir = template_mmcif_dir
         
+        self.train_by_features = train_by_features
         self.train_feature_dir  = train_feature_dir
         self.val_feature_dir    = val_feature_dir
         
@@ -529,18 +533,18 @@ class OpenFoldDataModule(pl.LightningDataModule):
         self.obsolete_pdbs_file_path = obsolete_pdbs_file_path
         self.batch_seed = batch_seed
 
-        if(self.train_data_dir is None and self.predict_data_dir is None):
+        if(self.train_data_dir is None and self.predict_data_dir is None) and (self.train_feature_dir is None and self.val_feature_dir is None):
             raise ValueError(
                 'At least one of train_data_dir or predict_data_dir must be '
                 'specified')
 
-        self.training_mode = self.train_data_dir is not None
+        self.training_mode = (self.train_data_dir is not None) or (self.train_feature_dir is not None)
 
         if(self.training_mode and self.train_alignment_dir is None and self.train_feature_dir is None):
             raise ValueError(
                 'In training mode, train_alignment_dir must be specified'
             )
-        elif(not self.training_mode and self.predict_alingment_dir is None):
+        elif(not self.training_mode and (self.predict_alingment_dir is None or self.val_feature_dir is None)):
             raise ValueError(
                 'In inference mode, predict_alignment_dir must be specified'
             )      
@@ -556,29 +560,40 @@ class OpenFoldDataModule(pl.LightningDataModule):
 
         # Most of the arguments are the same for the three datasets 
         dataset_gen = partial(OpenFoldSingleDataset,
-            template_mmcif_dir=self.template_mmcif_dir,
-            max_template_date=self.max_template_date,
+            # template_mmcif_dir=self.template_mmcif_dir,
+            # max_template_date=self.max_template_date,
             config=self.config,
             kalign_binary_path=self.kalign_binary_path,
-            template_release_dates_cache_path=
-                self.template_release_dates_cache_path,
+            # template_release_dates_cache_path=
+            #     self.template_release_dates_cache_path,
             obsolete_pdbs_file_path=
                 self.obsolete_pdbs_file_path,
         )
 
         if(self.training_mode):        
-            self.train_dataset = dataset_gen(
-                data_dir=self.train_data_dir,
-                alignment_dir=self.train_alignment_dir,   
-                feature_dir = self.train_feature_dir,
-                mapping_path=self.train_mapping_path,
-                max_template_hits=self.config.train.max_template_hits,
-                shuffle_top_k_prefiltered=
-                    self.config.train.shuffle_top_k_prefiltered,
-                treat_pdb_as_distillation=False,
-                mode="train",
-                _output_raw=True,
-            )
+            if(self.train_by_features == True):
+                self.train_dataset = dataset_gen(
+                    feature_dir = self.train_feature_dir,
+                    mapping_path=self.train_mapping_path,
+                    shuffle_top_k_prefiltered=
+                        self.config.train.shuffle_top_k_prefiltered,
+                    treat_pdb_as_distillation=False,
+                    mode="train",
+                    _output_raw=True,
+                )
+            else:
+                self.train_dataset = dataset_gen(
+                    data_dir=self.train_data_dir,
+                    alignment_dir=self.train_alignment_dir,   
+                    feature_dir = self.train_feature_dir,
+                    mapping_path=self.train_mapping_path,
+                    max_template_hits=self.config.train.max_template_hits,
+                    shuffle_top_k_prefiltered=
+                        self.config.train.shuffle_top_k_prefiltered,
+                    treat_pdb_as_distillation=False,
+                    mode="train",
+                    _output_raw=True,
+                )
 
             if(self.distillation_data_dir is not None):
                 distillation_dataset = dataset_gen(
@@ -613,8 +628,8 @@ class OpenFoldDataModule(pl.LightningDataModule):
             else:
                 if self.val_feature_dir is not None:
                     self.eval_dataset = dataset_gen(
-                        data_dir=self.train_data_dir,
-                        alignment_dir=self.train_alignment_dir,
+                        # data_dir=self.train_data_dir,
+                        # alignment_dir=self.train_alignment_dir,
                         feature_dir = self.val_feature_dir,
                         max_template_hits=self.config.eval.max_template_hits,
                         mode="eval",

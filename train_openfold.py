@@ -2,7 +2,6 @@ import argparse
 import logging
 import os
 import sys
-sys.path.append('/home/bis/230925_PSH_DisulF/AlphaLink/')
 #os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 #os.environ["MASTER_ADDR"]="10.119.81.14"
 #os.environ["MASTER_PORT"]="42069"
@@ -54,9 +53,6 @@ class OpenFoldWrapper(pl.LightningModule):
         
         #PSH ... 240703... for Tensorboard..
         self.output_name = output_name
-        # self.writer = SummaryWriter(os.path.join(self.config.training.tensorboard_logdir,output_name))
-        
-        # self.loss = AlphaFoldLoss(config.loss, self.writer)
         self.loss = AlphaFoldLoss(config.loss, self.get_writer(self.current_epoch))
         self.ema = ExponentialMovingAverage(
             model=self.model, decay=config.ema.decay
@@ -82,7 +78,6 @@ class OpenFoldWrapper(pl.LightningModule):
         batch = tensor_tree_map(lambda t: t[..., -1], batch)
 
         # Compute loss
-        # loss = self.loss(outputs, batch)
         loss = self.loss(outputs, batch, batch_idx)
         self.log("loss", loss, on_step=True, logger=True, prog_bar=True)
         return loss
@@ -106,8 +101,6 @@ class OpenFoldWrapper(pl.LightningModule):
                     per_residue=False,
                 )
 
-        # self.log("val_loss", loss, prog_bar=True)
-        # self.log("val_loss", loss, prog_bar=True,on_epoch=True)
         self.log("val_loss", loss, prog_bar=True,on_step=True,logger=True)
         return {"val_loss": loss}
 
@@ -123,11 +116,8 @@ class OpenFoldWrapper(pl.LightningModule):
         self.cached_weights = None
 
     def configure_optimizers(self, 
-        #PSH modifying... learning rate... 240520 1e-3 to 5 * 1e- 4..
         learning_rate: float = 5 * 1e-4,
         eps: float = 1e-8            
-        # learning_rate: float = 1e-3,
-        # eps: float = 1e-8
     ) -> torch.optim.Adam:
         # Ignored as long as a DeepSpeed optimizer is configured
         learning_rate = self.config.training.learning_rate
@@ -153,7 +143,6 @@ class OpenFoldWrapper(pl.LightningModule):
 
 
 def main(args):
-    sys.path.append('/home/bis/230925_PSH_DisulF/AlphaLink')
     
     if(args.seed is not None):
         seed_everything(args.seed) 
@@ -171,13 +160,10 @@ def main(args):
     model = AlphaFold(config)   
     
     if config.training.use_pretrained_parameter == True:
-        import_jax_weights_(model, "openfold/params/params_model_5_ptm.npz", version="model_5_ptm")
-    # import_jax_weights_(model, "/home/bis/230925_PSH_DisulF/AlphaLink/openfold/resources/params/params_model_5_ptm.npz", version="model_5_ptm")
-    # import_jax_weights_(model, "openfold/openfold_params/finetuning_no_templ_ptm_1.pt", version="model_5_ptm")
-    
+        import_jax_weights_(model, "openfold/resources/params/params_model_5_ptm.npz", version="model_5_ptm")
+
     model_module = OpenFoldWrapper(config, model, args.output_name, args.train_feature_dir.split('/')[-3])
 
-    #script_preset_(model)
 
     if(args.resume_from_ckpt and args.resume_model_weights_only):
         sd = get_fp32_state_dict_from_zero_checkpoint(args.resume_from_ckpt)
@@ -223,7 +209,7 @@ def main(args):
     if(args.log_performance):
         global_batch_size = args.num_nodes * args.gpus
         perf = PerformanceLoggingCallback(
-            #psh modifying.. .231215... for taking model name to performance_log.json...
+            # for taking model name to performance_log.json...
             log_file=os.path.join(args.output_dir, f"{args.model_name}_performance_log.json"),
             global_batch_size=global_batch_size,
         )
@@ -234,10 +220,8 @@ def main(args):
             cluster_environment = SLURMEnvironment()
         else:
             cluster_environment = None
-        #strategy = DeepSpeedPlugin(config=args.deepspeed_config_path,cluster_environment=cluster_environment,)
         strategy = DeepSpeedStrategy(config=args.deepspeed_config_path,cluster_environment=cluster_environment,)
     elif (args.gpus is not None and args.gpus) > 1 or args.num_nodes > 1:
-        # strategy = DDPPlugin(find_unused_parameters=False)
         strategy = pl.strategies.DDPStrategy
     else:
         strategy = None
@@ -247,7 +231,6 @@ def main(args):
         strategy=strategy,
         callbacks=callbacks,
         max_epochs = config.training.max_epochs,
-        # log_every_n_steps=10, 
         accumulate_grad_batches=config.training.batch_size
     )
 
@@ -262,9 +245,6 @@ def main(args):
         ckpt_path=ckpt_path,
     )
 
-    # trainer.save_checkpoint(
-    #     os.path.join(trainer.logger.log_dir, "checkpoints", "final.ckpt")
-    # )
 
 
 def bool_type(bool_str: str):
@@ -278,45 +258,42 @@ def bool_type(bool_str: str):
 
 
 if __name__ == "__main__":
-    # os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"  # Arrange GPU devices starting from 0
-    # os.environ["CUDA_VISIBLE_DEVICES"]= "3"  # Set the GPU 2 to use
-    # sys.path.append('/home/bis/230925_PSH_DisulF/AlphaLink')
     
     parser = argparse.ArgumentParser()
     # parser.add_argument(
-    #     "feature_dir", type=str, default='/home/bis/230925_PSH_DisulF/new_features_multidata',
-    #     help="Directory containing training feature files"
+    #     "train_data_dir", type=str, default=None,
+    #     help="Directory containing training mmCIF files"
     # )
-    parser.add_argument(
-        "train_data_dir", type=str, default=None,
-        help="Directory containing training mmCIF files"
-    )
-    parser.add_argument(
-        "train_alignment_dir", type=str,default=None,
-        help="Directory containing precomputed training alignments"
-    )
-    parser.add_argument(
-        "template_mmcif_dir", type=str,default=None,
-        help="Directory containing mmCIF files to search for templates"
-    )
+    # parser.add_argument(
+    #     "train_alignment_dir", type=str,default=None,
+    #     help="Directory containing precomputed training alignments"
+    # )
+    # parser.add_argument(
+    #     "template_mmcif_dir", type=str,default=None,
+    #     help="Directory containing mmCIF files to search for templates"
+    # )
         
     parser.add_argument(
         "output_dir", type=str,
         help='''Directory in which to output checkpoints, logs, etc. Ignored
                 if not on rank 0'''
     )
-    parser.add_argument(
-        "max_template_date", type=str,
-        help='''Cutoff for all templates. In training mode, templates are also 
-                filtered by the release date of the target'''
-    )
+    # parser.add_argument(
+    #     "max_template_date", type=str, default=None,
+    #     help='''Cutoff for all templates. In training mode, templates are also 
+    #             filtered by the release date of the target'''
+    # )
     #PSH modifying for taking model_name...
     parser.add_argument(
         "--model_name", type=str, default=None,
         help="model name to train"
     )
-   
-    #JSG modifying for taking model_name...
+    
+    parser.add_argument(
+        "--train_by_features", type=bool_type, default=True,
+        help="Setup the train data type. If you train with feature file, then it will be True."
+    )
+    
     parser.add_argument(
         "--output_name", type=str, default=None,
         help="output"
@@ -332,7 +309,6 @@ if __name__ == "__main__":
         help="Directory containing val_feature"
     )
 
-    # PSH modifying for taking gpu number...
     parser.add_argument(
         "--GPU_number", type=str, default=None,
         help="a number of GPU"
@@ -373,11 +349,11 @@ if __name__ == "__main__":
         help="""Path to obsolete.dat file containing list of obsolete PDBs and 
              their replacements."""
     )
-    parser.add_argument(
-        "--template_release_dates_cache_path", type=str, default=None,
-        help="""Output of scripts/generate_mmcif_cache.py run on template mmCIF
-                files."""
-    )
+    # parser.add_argument(
+    #     "--template_release_dates_cache_path", type=str, default=None,
+    #     help="""Output of scripts/generate_mmcif_cache.py run on template mmCIF
+    #             files."""
+    # )
     parser.add_argument(
         "--use_small_bfd", type=bool_type, default=False,
         help="Whether to use a reduced version of the BFD database"
