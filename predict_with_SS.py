@@ -310,7 +310,104 @@ def main(args):
     tag = tag[0]
     seq = seq[0]
 
-    for model_number in range(args.model_num):
+    if args.only_use_1_model == '0':
+        for model_number in range(args.model_num):
+            model, output_directory = load_models_from_command_line(args, config, model_number)
+
+            cur_tracing_interval = 0
+
+            output_name = f'{tag}'
+            if args.output_postfix is not None:
+                output_name = f'{output_name}_{args.output_postfix}'
+
+            if args.features:
+                feature_dict = pickle.load(open(args.features,'rb'))
+            else:
+                # Does nothing if the alignments have already been computed
+                precompute_alignments(tag, seq, alignment_dir, args)
+                feature_dict = generate_feature_dict(
+                    [tag],
+                    [seq],
+                    alignment_dir,
+                    data_processor,
+                    args,
+                )
+                
+        
+            # Taking disulfide bond information as unsupervised feature
+            disulf_info = np.load(args.disulf_info_path, allow_pickle=True)
+            feature_dict['disulf_disto'] = disulf_info['disulf_disto']
+            # subsample MSAs to specified Neff
+            msa = feature_dict['msa']
+            
+
+            if args.neff:
+                logger.info(
+                    f"Subsampling MSA to Neff={args.neff}..."
+                )
+                indices = subsample_msa_sequentially(msa, neff=args.neff)
+                feature_dict['msa'] = msa[indices]
+                feature_dict['deletion_matrix_int'] = feature_dict['deletion_matrix_int'][indices]
+
+            processed_feature_dict = feature_processor.process_features(
+                feature_dict, mode='predict',
+            )
+
+            processed_feature_dict = {
+                k:torch.as_tensor(v, device=args.model_device) 
+                for k,v in processed_feature_dict.items()
+            }
+            
+
+            ## start inference...
+            out = run_model(model, processed_feature_dict, tag, args)
+
+            # Toss out the recycling dimensions --- we don't need them anymore
+            processed_feature_dict = tensor_tree_map(
+                lambda x: np.array(x[..., -1].cpu()), 
+                processed_feature_dict
+            )
+            
+            
+            out = tensor_tree_map(lambda x: np.array(x.cpu()), out)
+
+            plddt = out["plddt"]
+
+            plddt_b_factors = np.repeat(
+                plddt[..., None], residue_constants.atom_type_num, axis=-1
+            )
+            
+            unrelaxed_protein = protein.from_prediction(
+                features=processed_feature_dict,
+                result=out,
+                b_factors=plddt_b_factors
+            )
+
+            unrelaxed_output_path = os.path.join(
+                output_directory, f'{output_name}_{model_number}_unrelaxed.pdb'
+            )
+
+
+            with open(unrelaxed_output_path, 'w') as fp:
+                fp.write(protein.to_pdb(unrelaxed_protein))
+
+            logger.info(f"Output written to {unrelaxed_output_path}...")
+            
+
+            
+            if args.save_outputs:
+                output_dict_path = os.path.join(
+                    output_directory, f'{output_name}_{model_number}_output_dict.pkl'
+                )
+                with open(output_dict_path, "wb") as fp:
+                    pickle.dump(out, fp, protocol=pickle.HIGHEST_PROTOCOL)
+
+                logger.info(f"Model output written to {output_dict_path}...")
+                
+            if args.checking_vanila:
+                break
+    else:
+        model_number = 2
         model, output_directory = load_models_from_command_line(args, config, model_number)
 
         cur_tracing_interval = 0
@@ -383,7 +480,7 @@ def main(args):
         )
 
         unrelaxed_output_path = os.path.join(
-            output_directory, f'{output_name}_{model_number}_unrelaxed.pdb'
+            output_directory, f'{output_name}_None_unrelaxed.pdb'
         )
 
 
@@ -396,15 +493,14 @@ def main(args):
         
         if args.save_outputs:
             output_dict_path = os.path.join(
-                output_directory, f'{output_name}_{model_number}_output_dict.pkl'
+                output_directory, f'{output_name}_None_output_dict.pkl'
             )
             with open(output_dict_path, "wb") as fp:
                 pickle.dump(out, fp, protocol=pickle.HIGHEST_PROTOCOL)
 
             logger.info(f"Model output written to {output_dict_path}...")
             
-        if args.checking_vanila == True :
-            break
+    
         
     
     logger.info(f"Inference completed.")
@@ -418,10 +514,17 @@ if __name__ == "__main__":
     )
     
     parser.add_argument(
-        "--model_name", type=str, default=None,
+        "--model_name", type=str, default='AlphaSS_ft_model',
         help="""model_name for configuration setting..."""
     )
-
+    
+    parser.add_argument(
+        "--only_use_1_model", type=str, default='0',
+        help="""setup the inference model number...
+            if it is 0, use all model. if it is 1, than it will use only 1 model."""
+        
+    )
+    
     parser.add_argument(
         "--disulf_info_path", type=str, default=None,
         help="""Path to disulf_info (.pkl) directory."""
@@ -448,7 +551,7 @@ if __name__ == "__main__":
     )
     
     parser.add_argument(
-        "--model_device", type=str, default="cuda:2",
+        "--model_device", type=str, default="cuda:1",
         help="""Name of the device on which to run the model. Any valid torch
              device name is accepted (e.g. "cpu", "cuda:0")"""
     )
