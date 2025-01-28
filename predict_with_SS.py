@@ -254,7 +254,11 @@ def load_models_from_command_line(args, config, model_number):
     if args.model_name.startswith('model') :
         import_jax_weights_(model, "./openfold/resources/params/params_model_5_ptm.npz", version="model_5_ptm")
     
-    # for AlphaSS config 
+    # for AlphaSS config    
+    if args.version == '1':
+        sd = torch.load(args.checkpoint_path)['ema']['params']
+        model.load_state_dict(sd)
+        
     else : 
         ckpt_path = os.path.join(args.checkpoint_path, f'{args.model_name}_{model_number}.ckpt')
         sd = torch.load(ckpt_path)['ema']['params']
@@ -407,7 +411,7 @@ def main(args):
             if args.checking_vanila:
                 break
     else:
-        model_number = 2
+        model_number = 4
         model, output_directory = load_models_from_command_line(args, config, model_number)
 
         cur_tracing_interval = 0
@@ -522,6 +526,13 @@ if __name__ == "__main__":
         "--only_use_1_model", type=str, default='0',
         help="""setup the inference model number...
             if it is 0, use all model. if it is 1, than it will use only 1 model."""
+        
+    )
+    
+    parser.add_argument(
+        "--version", type=str, default='0',
+        help="""setup the inference model version...
+            if it is 0, the model version is 0. if it is 1, than model version is 1."""
         
     )
     
