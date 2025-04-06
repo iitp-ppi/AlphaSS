@@ -60,6 +60,24 @@ def model_config(name, train=False, low_prec=False):
         c.training.batch_size = 64
         c.training.learning_rate = 5e-4
         c.model.SS_enable = True
+
+
+    elif name == "AlphaSS_ft_model_SSloss1":
+        c.model.template.enabled = False
+        c.model.heads.tm.enabled = True
+        
+        c.loss.tm.weight = 0.1
+        c.loss.violation.weight = 1.
+        c.loss.experimentally_resolved.weight = 0.01
+        c.loss.SS.weight = 1.0
+        
+        c.training.use_pretrained_parameter = True
+
+        c.training.max_epochs = 5
+        
+        c.training.batch_size = 64
+        c.training.learning_rate = 5e-4
+        c.model.SS_enable = True
         
 
         
@@ -102,7 +120,7 @@ config = mlc.ConfigDict(
         "training" : {"use_pretrained_parameter" : True,
                       "batch_size" : 512,
                       "learning_rate" : 5 * 1e-4,
-                      "tensorboard_logdir" : '/data1/PSH_Disulf/tensorboard_logs',
+                      "tensorboard_logdir" : '/raid/bis/sehoon/data/tensorboard_logs/editLoss',
                       "freeze_before_structure_module" : False,
                       "freeze_before_evoformer" : False,
                       "freeze_except_SSembedder" : False,
@@ -179,6 +197,9 @@ config = mlc.ConfigDict(
                     "disulf_disto" : [
                         NUM_RES, NUM_RES, None,
                     ],
+                    "disulf_dist" : [
+                        NUM_RES, NUM_RES, None,
+                    ],
                 },
                 "masked_msa": {
                     "profile_prob": 0.1,
@@ -207,6 +228,7 @@ config = mlc.ConfigDict(
                     "no_recycling_iters",
                     # PSH modifying for adding disulf_disto feature to feature
                     "disulf_disto",
+                    "disulf_dist",
                 ],
                 "use_templates": templates_enabled,
                 "use_template_torsion_angles": embed_template_torsion_angles,
@@ -443,6 +465,10 @@ config = mlc.ConfigDict(
             "exclude_residues": [],
         },
         "loss": {
+            "SS": {
+                "eps": 1e-6,  # 1e-6,
+                "weight": 1.0,
+            },
             "distogram": {
                 "min_bin": 2.3125,
                 "max_bin": 21.6875,

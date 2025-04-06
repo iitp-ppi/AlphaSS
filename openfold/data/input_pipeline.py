@@ -31,6 +31,7 @@ def nonensembled_transform_fns(common_cfg, mode_cfg):
         data_transforms.make_msa_mask,
         data_transforms.make_hhblits_profile,
         data_transforms.disulf_disto,
+        data_transforms.disulf_dist,
     ]
     if common_cfg.use_templates:
         transforms.extend(

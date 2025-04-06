@@ -335,7 +335,7 @@ class AlphaFold(nn.Module):
         )
         outputs["final_atom_mask"] = feats["atom37_atom_exists"]
         outputs["final_affine_tensor"] = outputs["sm"]["frames"][-1]
-
+        # outputs["disulf_dist"] = feats["disulf_dist"]
         # Save embeddings for use during the next recycling iteration
 
         # [*, N, C_m]

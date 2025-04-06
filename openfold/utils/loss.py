@@ -23,7 +23,7 @@ from torch.distributions.bernoulli import Bernoulli
 from typing import Dict, Optional, Tuple
 import numpy as np
 
-from openfold.np import residue_constants
+from openfold.np import residue_constants, protein
 from openfold.utils import feats
 from openfold.utils.rigid_utils import Rotation, Rigid
 from openfold.utils.tensor_utils import (
@@ -1314,6 +1314,51 @@ def violation_loss(
     return loss
 
 
+def SS_loss(
+    pred_atom_positions: torch.Tensor,
+    pred_atom_mask: torch.Tensor,
+    SS_bond_dist: torch.Tensor,
+    eps: float = 1e-10,
+    **kwargs,
+) -> torch.Tensor:
+    
+    sg_pos = residue_constants.atom_order["SG"]
+    all_atom_pred_pos = pred_atom_positions[..., sg_pos, :][0]
+    sg_atom_mask = pred_atom_mask[...,sg_pos][0]
+    full_sg_mask = torch.zeros(sg_atom_mask.shape[0], dtype=torch.bool, device=sg_atom_mask.device)
+    full_sg_mask[sg_atom_mask.bool()] = True
+    
+    # print(f"all_atom_pred_pos shape : {all_atom_pred_pos.shape}")
+
+    # print(f"SS_bond_dist shape : {SS_bond_dist.shape}")
+
+    res_i_list, res_j_list = torch.where(SS_bond_dist[0]!= 0)[0], torch.where(SS_bond_dist[0]!= 0)[1]
+    # print(res_i_list)
+    # print(res_j_list)
+    pos_i, pos_j = all_atom_pred_pos[res_i_list], all_atom_pred_pos[res_j_list]
+    
+    pos_i_mask, pos_j_mask = full_sg_mask[res_i_list],full_sg_mask[res_j_list]
+    # print(f"sg_atom_mask check : {sg_atom_mask[res_i_list]}")
+    pred_dist = torch.sqrt(
+        eps + torch.sum((pos_i[pos_i_mask] - pos_j[pos_j_mask]) **2, dim=-1)
+    )
+    # print(f"pred_dist: {pred_dist}")
+    # print(SS_bond_dist[0][res_i_list, res_j_list].squeeze(1))
+    # print(torch.abs(SS_bond_dist[0][res_i_list, res_j_list].squeeze(1)- pred_dist))
+    # print(torch.sum(torch.abs(SS_bond_dist[0][res_i_list, res_j_list].squeeze(1)- pred_dist), dim=-1)/(eps+torch.sum(sg_atom_mask, dim=-1)))
+    # print(torch.mean(torch.sum(torch.abs(SS_bond_dist[0][res_i_list, res_j_list].squeeze(1)- pred_dist), dim=-1)/(eps+torch.sum(sg_atom_mask, dim=-1))))
+    gt_dist = SS_bond_dist[0][res_i_list[pos_i_mask], res_j_list[pos_j_mask]].squeeze(1)
+    # pred_dist.shape, gt_dist.shape
+    # print(f"gt dist : {gt_dist}")
+    SS_dist_diff = torch.abs(gt_dist - pred_dist)
+    # print(f"SS_dist_diff : {SS_dist_diff}")
+    loss = torch.sum(SS_dist_diff, dim=-1)/(eps+torch.sum(pos_i_mask*pos_j_mask, dim=-1))
+    loss = torch.mean(loss)
+
+
+    return loss
+
+
 def compute_renamed_ground_truth(
     batch: Dict[str, torch.Tensor],
     atom14_pred_positions: torch.Tensor,
@@ -1574,6 +1619,13 @@ class AlphaFoldLoss(nn.Module):
                **{**batch, **out, **self.config.tm},
             ),
             
+            "SS": lambda : SS_loss(
+                pred_atom_positions = out["final_atom_positions"],
+                pred_atom_mask = out["final_atom_mask"],
+                SS_bond_dist = batch["disulf_dist"],
+                **self.config.SS,
+            )
+            
         }
                     
         cum_loss = 0.
@@ -1597,7 +1649,7 @@ class AlphaFoldLoss(nn.Module):
 
         return cum_loss
    
-    
+ 
     
     
 class EvaluatorLoss(nn.Module):

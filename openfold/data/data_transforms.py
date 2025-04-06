@@ -244,6 +244,12 @@ def disulf_disto(protein):
     
     return protein
 
+def disulf_dist(protein):
+    protein["disulf_dist"] = protein["disulf_dist"].clone().detach().to(torch.float32)
+    
+    return protein
+    
+
 # Not used in inference
 @curry1
 def block_delete_msa(protein, config):
