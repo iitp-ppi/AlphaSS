@@ -260,30 +260,13 @@ def bool_type(bool_str: str):
 if __name__ == "__main__":
     
     parser = argparse.ArgumentParser()
-    # parser.add_argument(
-    #     "train_data_dir", type=str, default=None,
-    #     help="Directory containing training mmCIF files"
-    # )
-    # parser.add_argument(
-    #     "train_alignment_dir", type=str,default=None,
-    #     help="Directory containing precomputed training alignments"
-    # )
-    # parser.add_argument(
-    #     "template_mmcif_dir", type=str,default=None,
-    #     help="Directory containing mmCIF files to search for templates"
-    # )
         
     parser.add_argument(
         "output_dir", type=str,
         help='''Directory in which to output checkpoints, logs, etc. Ignored
                 if not on rank 0'''
     )
-    # parser.add_argument(
-    #     "max_template_date", type=str, default=None,
-    #     help='''Cutoff for all templates. In training mode, templates are also 
-    #             filtered by the release date of the target'''
-    # )
-    #PSH modifying for taking model_name...
+        
     parser.add_argument(
         "--model_name", type=str, default=None,
         help="model name to train"
@@ -349,11 +332,7 @@ if __name__ == "__main__":
         help="""Path to obsolete.dat file containing list of obsolete PDBs and 
              their replacements."""
     )
-    # parser.add_argument(
-    #     "--template_release_dates_cache_path", type=str, default=None,
-    #     help="""Output of scripts/generate_mmcif_cache.py run on template mmCIF
-    #             files."""
-    # )
+    
     parser.add_argument(
         "--use_small_bfd", type=bool_type, default=False,
         help="Whether to use a reduced version of the BFD database"
