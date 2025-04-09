@@ -38,7 +38,7 @@ matplotlib.use('Agg')
 
 np.random.seed(4242022)
 
-CB_dist, CB_std = 3.85, 0.26
+CB_dist, CB_std, SG_dist = 3.85, 0.26, 2.05
 disulf_info = {}
 
 restraints = np.genfromtxt(args.infile,
@@ -52,6 +52,7 @@ if len(restraints.shape) == 1:
 
 seq_length = restraints["Length"][0][0]
 distogram = np.zeros((seq_length, seq_length, 128))
+ss_dist = np.zeros((seq_length, seq_length, 1))
 pair_info = []
 
 for i, line in enumerate(restraints):
@@ -67,10 +68,10 @@ for i, line in enumerate(restraints):
     n /= np.sum(n)
     n = n.tolist()
     distogram[res_from_0, res_to_0] = distogram[res_to_0, res_from_0] = np.array(list(n))
-
+    ss_dist[res_from_0, res_to_0] = ss_dist[res_to_0, res_from_0] = SG_dist
 pair_info = np.array(pair_info)
 
-disulf_info['disulf_disto'], disulf_info['pair_info'] = distogram, pair_info
+disulf_info['disulf_disto'], disulf_info['disulf_dist'], disulf_info['pair_info'] = distogram, ss_dist, pair_info
 
 with open(args.outfile,'wb') as f:
     pickle.dump(disulf_info,f)
