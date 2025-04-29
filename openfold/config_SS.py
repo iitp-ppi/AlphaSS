@@ -42,6 +42,7 @@ def model_config(name, train=False, low_prec=False):
         c.loss.tm.weight = 0.1
         c.training.use_pretrained_parameter = True
         c.model.SS_enable = False
+        c.loss.SS.weight = 0.0
         
               
    #psh modifying... for adding disulfide bond model..

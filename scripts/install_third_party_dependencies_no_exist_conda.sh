@@ -1,16 +1,27 @@
 #!/bin/bash
+CONDA_INSTALL_URL=${CONDA_INSTALL_URL:-"https://repo.anaconda.com/miniconda/Miniconda3-py39_25.1.1-0-Linux-x86_64.sh"}
+
 source scripts/vars.sh
 
+# Install Miniconda locally
+rm -rf lib/conda
+rm -f /tmp/Miniconda3-py39_25.1.1-0-Linux-x86_64.sh
+wget -P /tmp \
+    "${CONDA_INSTALL_URL}" \
+    && bash /tmp/Miniconda3-py39_25.1.1-0-Linux-x86_64.sh -b -p lib/conda \
+    && rm /tmp/Miniconda3-py39_25.1.1-0-Linux-x86_64.sh
+
+# Grab conda-only packages
+export PATH=lib/conda/bin:$PATH
 conda env create --name=${ENV_NAME} -f environment.yml
 source activate ${ENV_NAME}
 
-
 # Install DeepMind's OpenMM patch
 OPENFOLD_DIR=$PWD
-# for line 11, you have to insert your conda path!
-pushd /your_conda_path/envs/${ENV_NAME}/lib/python3.9/site-packages \
+pushd lib/conda/envs/$ENV_NAME/lib/python3.9/site-packages/ \
     && patch -p0 < $OPENFOLD_DIR/lib/openmm.patch \
     && popd
+
 
 # Download folding resources
 wget -q -P openfold/resources \

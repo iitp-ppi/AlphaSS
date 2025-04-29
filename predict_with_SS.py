@@ -331,11 +331,17 @@ def main(args):
             args,
         )
         
-
+    
     # Taking disulfide bond information as unsupervised feature
     disulf_info = np.load(args.disulf_info_path, allow_pickle=True)
-    feature_dict['disulf_disto'] = disulf_info['disulf_disto']
-    feature_dict['disulf_dist'] = disulf_info['disulf_dist']
+    
+    if args.model_name.startswith('model') :
+        seq_length = feature_dict['seq_length'][0]
+        feature_dict['disulf_disto'] = np.zeros((seq_length, seq_length, 128))
+        feature_dict['disulf_dist'] = np.zeros((seq_length, seq_length, 1))
+    else :
+        feature_dict['disulf_disto'] = disulf_info['disulf_disto']
+        feature_dict['disulf_dist'] = disulf_info['disulf_dist']
     # subsample MSAs to specified Neff
     msa = feature_dict['msa']
     

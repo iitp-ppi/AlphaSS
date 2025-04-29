@@ -17,9 +17,16 @@ Please refer to the [OpenFold GitHub](https://github.com/aqlaboratory/openfold#i
 
 ### easy way to setup
 1. git clone this repository
-2. make the conda enviroments from
+2. make the conda enviroments 
+- 2.1. if you don't install conda, please run the
+
+     scripts/install_third_party_dependencies_no_exist_conda.sh
+
+- 2.2. if you already install conda, please revise line 11 in 'scripts/install_third_party_dependencies.sh' and run the 
 
      scripts/install_third_party_dependencies.sh
+
+
 
 
 ## Disulfide bond data
