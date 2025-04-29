@@ -253,17 +253,21 @@ def load_models_from_command_line(args, config):
     # for vanila OpenFold config. 
     if args.model_name.startswith('model') :
         import_jax_weights_(model, "./openfold/resources/params/params_model_5_ptm.npz", version="model_5_ptm")
-    
+        model = model.to(args.model_device)
+        logger.info(
+            f"Loaded OpenFold parameters at ./openfold/resources/params/params_model_5_ptm.npz..."
+        )
     # for AlphaSS config  
     else:  
         sd = torch.load(args.checkpoint_path)['ema']['params']
         model.load_state_dict(sd)
+        model = model.to(args.model_device)
+        logger.info(
+            f"Loaded AlphaSS parameters at {args.checkpoint_path}..."
+        )
 
     
-    model = model.to(args.model_device)
-    logger.info(
-        f"Loaded OpenFold parameters at {args.checkpoint_path}..."
-    )
+
     output_directory = make_output_directory(args.output_dir, args.output_name)
 
     return model, output_directory
